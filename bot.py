@@ -1,171 +1,84 @@
-import os
-import json
-import asyncio
 import random
-import requests
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+import time
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, Filters
 
-# 🛡️ تنظیمات
-BOT_TOKEN = "7518391763:AAF8A7Q4pIck46vOAZlKSOhcewy4FTbGLb8"
-ADMIN_ID = 7031211787  # آیدی عددی ادمین
-DATA_FILE = "referrals.json"
+# اطلاعات شما
+BOT_TOKEN = "توکن شما اینجا"
+ADMIN_ID = 7031211787
 
-REQUIRED_CHANNELS = [
-    "@NeuroFi_Channel",
-    "@Neuro_Fi",
-    "@Neurofi_signals",
-    "@Neurofi_Crypto"
+# لیست جوایز
+rewards = [
+    "NFT اختصاصی 🎁",
+    "۵ تتر USDT 🎉",
+    "دسترسی VIP به سیگنال‌ها 🔐",
+    "جایزه‌ای تعلق نگرفت ❌"
 ]
 
-REWARDS = [
-    {"title": "🎨 NFT 50 دلاری", "count": 10, "weight": 3},
-    {"title": "🎨 NFT 100 دلاری", "count": 5, "weight": 2},
-    {"title": "🎨 NFT 150 دلاری", "count": 5, "weight": 1},
-    {"title": "🪙 1000 ECG", "count": 500, "weight": 10},
-    {"title": "🐶 2000 شیبا", "count": 50, "weight": 10},
-    {"title": "💎 پریمیوم تلگرام", "count": 10, "weight": 2},
-    {"title": "🌟 استار تلگرام", "count": 20, "weight": 3},
-    {"title": "🎮 خدمات رایگان NeuroFi", "count": None, "weight": 20},
-    {"title": "📌 امتیاز وفاداری (بدون جایزه)", "count": None, "weight": 50}
-]
+# مرحله اول /start
+def start(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="🧠 به دنیای NeuroFi خوش آمدید!\n\n"
+             "📌 ما یک شبکه واقعی هستیم با:\n"
+             "• خدمات صرافی و انتقال رمزارز\n"
+             "• سیگنال‌های شخصی‌سازی‌شده با هوش مصنوعی\n"
+             "• تحلیل اخبار، وایت‌پیپر و مقاله\n"
+             "• مصاحبه با پروژه‌های بزرگ\n"
+             "• ویس چت تحلیلی و آموزشی\n\n"
+             "🎯 برای استفاده از گردونه، دکمه زیر رو بزن:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎰 گردونه شانس", callback_data="spin")]
+        ])
+    )
 
-# 📦 مدیریت فایل
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-# 🔍 بررسی عضویت
-async def check_membership(user_id):
-    for channel in REQUIRED_CHANNELS:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getChatMember?chat_id={channel}&user_id={user_id}"
-        resp = requests.get(url).json()
-        status = resp.get("result", {}).get("status", "")
-        if status not in ["member", "administrator", "creator"]:
-            return False, channel
-    return True, ""
-
-# 🎁 انتخاب جایزه
-def pick_reward():
-    available = [r for r in REWARDS if r["count"] is None or r["count"] > 0]
-    weights = [r["weight"] for r in available]
-    chosen = random.choices(available, weights=weights, k=1)[0]
-    if chosen["count"]:
-        chosen["count"] -= 1
-    return chosen["title"]
-
-# 🧠 استارت ربات
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = str(user.id)
-    data = load_data()
-
-    if user_id not in data:
-        data[user_id] = {"invited": 0, "wallet": "", "last_reward": "", "spins": 0}
-        save_data(data)
-
-    member, missing_channel = await check_membership(user.id)
-    if not member:
-        await update.message.reply_text(
-            f"⛔️ برای استفاده از ربات، لطفاً ابتدا در کانال زیر عضو شوید:\n{missing_channel}"
-        )
-        return
-
-    # 🎉 پیام خوش‌آمد + دکمه گردونه
-    welcome = """🧠 به دنیای <b>NeuroFi</b> خوش آمدید!
-
-📌 ما یک شبکه واقعی هستیم با:
-• خدمات صرافی و انتقال رمزارز
-• سیگنال هوش مصنوعی و شخصی‌سازی شده
-• تحلیل‌، مقاله‌، اخبار، وایت‌پیپر
-• ویس‌چت آموزشی، تحلیلی و مصاحبه با پروژه‌ها
-
-✨ <b>در دنیای ما... جاذبه همیشه به سمت بالاست 🚀</b>
-
-🎯 برای استفاده از گردونه، روی دکمه زیر بزنید.
-📌 و جوایز ارزشمند مثل NFT، ارز دیجیتال و خدمات دریافت کن!
-"""
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎰 گردونه شانس", callback_data="spin")]
-    ])
-    await update.message.reply_text(welcome, reply_markup=keyboard, parse_mode="HTML")
-
-# 🎰 گردونه
-async def spin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# گردونه شانس
+def spin_wheel(update: Update, context: CallbackContext):
     query = update.callback_query
+    chat_id = query.message.chat.id
+    query.answer()
+
+    # ارسال گیف گردونه
+    with open("spinner.gif", "rb") as gif:
+        context.bot.send_animation(chat_id=chat_id, animation=gif)
+
+    time.sleep(3)  # تأخیر برای نمایش گیف
+
+    prize = random.choice(rewards)
+
+    context.bot.send_message(chat_id=chat_id, text=f"🎉 تبریک! شما برنده شدید:\n\n🎁 {prize}")
+
+    if "❌" not in prize:
+        context.bot.send_message(chat_id=chat_id, text="💼 لطفاً آدرس کیف پول USDT (TRC20) خود را ارسال کنید:")
+
+    # ارسال به ادمین
     user = query.from_user
-    user_id = str(user.id)
+    msg = f"👤 کاربر: {user.first_name} ({user.id})\n🎁 جایزه: {prize}"
+    context.bot.send_message(chat_id=ADMIN_ID, text=msg)
 
-    data = load_data()
-    if user_id not in data:
-        await query.answer("❗️ لطفاً ابتدا /start را بزنید.")
-        return
+# دریافت کیف پول
+def handle_wallet(update: Update, context: CallbackContext):
+    wallet = update.message.text
+    user = update.message.from_user
 
-    member, missing = await check_membership(user.id)
-    if not member:
-        await query.answer()
-        await query.message.reply_text(f"⛔️ هنوز عضو کانال {missing} نشده‌اید!")
-        return
+    # ارسال برای ادمین
+    msg = f"💳 کیف پول از {user.first_name} ({user.id}):\n{wallet}"
+    context.bot.send_message(chat_id=ADMIN_ID, text=msg)
 
-    await query.answer()
-    await query.message.reply_sticker("CAACAgUAAxkBAAEFaehl8CLNx5g0H6P3sGy1zq-FAKpO4wACDAADwDZPEyMBfnRW_4e2LwQ")  # استیکر گردونه
-    await asyncio.sleep(2)
-    await query.message.reply_text("🔄 در حال چرخش گردونه...")
-    await asyncio.sleep(3)
+    update.message.reply_text("✅ آدرس کیف پول دریافت شد. تیم ما به زودی جایزه را بررسی می‌کند.")
 
-    reward = pick_reward()
-    data[user_id]["last_reward"] = reward
-    data[user_id]["spins"] += 1
-    save_data(data)
+# اجرای ربات
+def main():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    await query.message.reply_text(
-        f"🎉 تبریک! شما برنده شدید:\n\n<b>{reward}</b>\n\n"
-        "📩 لطفاً آدرس کیف پول خود را با فرمت زیر ارسال کنید:\n\n"
-        "<code>wallet: YOUR_WALLET_ADDRESS</code>",
-        parse_mode="HTML"
-    )
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CallbackQueryHandler(spin_wheel, pattern="^spin$"))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_wallet))
 
-# 💼 دریافت آدرس کیف پول
-async def handle_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = str(user.id)
-    text = update.message.text.strip()
-    data = load_data()
+    updater.start_polling()
+    updater.idle()
 
-    if not text.lower().startswith("wallet:"):
-        await update.message.reply_text("📌 لطفاً آدرس کیف پول را با فرمت زیر ارسال کنید:\nwallet: YOUR_WALLET")
-        return
-
-    wallet = text.split("wallet:")[1].strip()
-    if user_id not in data:
-        await update.message.reply_text("❗️ لطفاً ابتدا /start را بزنید.")
-        return
-
-    data[user_id]["wallet"] = wallet
-    save_data(data)
-
-    # ارسال پیام به ادمین
-    reward = data[user_id]["last_reward"]
-    admin_msg = (
-        f"🎁 کاربر جدید جایزه گرفت:\n\n"
-        f"👤 Username: @{user.username or 'N/A'}\n"
-        f"🆔 ID: {user_id}\n"
-        f"🎁 جایزه: {reward}\n"
-        f"💳 کیف پول: {wallet}"
-    )
-    await context.bot.send_message(chat_id=ADMIN_ID, text=admin_msg)
-    await update.message.reply_text("✅ آدرس کیف پول ثبت شد و برای تیم پشتیبانی ارسال شد.")
-
-# ▶️ اجرای ربات
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(spin_callback, pattern="^spin$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_wallet))
-    app.run_polling()
+if __name__ == '__main__':
+    main()
