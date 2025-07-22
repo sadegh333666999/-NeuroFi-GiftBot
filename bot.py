@@ -1,179 +1,131 @@
-import os
-import json
-import random
-import asyncio
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+import logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, Sticker
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters
+    ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 )
-import requests
+import random
+import os
 
-# ---------------- تنظیمات ----------------
-BOT_TOKEN = "7518391763:AAF8A7Q4pIck46vOAZlKSOhcewy4FTbGLb8"
-ADMIN_ID = 7031211787
-DATA_FILE = "neuro_data.json"
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = "7031211787"  # آیدی عددی ادمین
 
-REQUIRED_CHANNELS = [
-    "@NeuroFi_Channel",
-    "@Neuro_Fi",
-    "@Neurofi_signals",
-    "@Neurofi_Crypto"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# لیست جوایز
+PRIZES = [
+    "🎁 50 دلار نقدی",
+    "🎉 10 هزار توکن شیبا",
+    "💎 NFT ویژه",
+    "🚀 اکانت پرمیوم NeuroFi",
+    "🧠 دسترسی به سیگنال حرفه‌ای",
+    "🎬 دوره ویدیویی رایگان",
+    "💰 500 توکن ECG",
+    "🎧 موزیک اختصاصی تریدر",
 ]
 
-REWARD_POOL = [
-    "🎨 NFT به ارزش ۵۰ دلار",
-    "🎨 NFT به ارزش ۱۰۰ دلار",
-    "🎨 NFT به ارزش ۱۵۰ دلار",
-    "🪙 ۵۰۰ ECG توکن",
-    "🐶 ۲۰۰۰ شیبا",
-    "💎 اکانت پریمیوم ۱ ماهه",
-    "🌟 استار هدیه",
-    "🎮 خدمات رایگان NeuroFi",
-    "❌ امتیاز وفاداری بدون جایزه"
-]
+# استیکر گردونه (می‌توانید استیکرهای بیشتری اضافه کنید)
+WHEEL_STICKER = "CAACAgUAAxkBAAEF2_dlmrVLkP1LdEXX9gaYzvowG-hvUgACNAIAAk77cFVx1Erhw-kAzjQE"
 
-# ---------------- فایل داده ----------------
-def load_data():
-    if not os.path.exists(DATA_FILE):
-        return {}
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-# ---------------- بررسی عضویت ----------------
-async def is_member(user_id):
-    for ch in REQUIRED_CHANNELS:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/getChatMember?chat_id={ch}&user_id={user_id}"
-        result = requests.get(url).json()
-        status = result.get("result", {}).get("status", "")
-        if status not in ["member", "administrator", "creator"]:
-            return False
-    return True
-
-# ---------------- پیام خوش‌آمد ----------------
+# استارت
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    uid = str(user.id)
-    data = load_data()
-
-    # ذخیره رفرال
-    if context.args:
-        ref_id = context.args[0]
-        if ref_id != uid:
-            if uid not in data:
-                data[uid] = {"ref": ref_id, "wallet": "", "spins": 0, "invites": 0}
-            if ref_id in data:
-                data[ref_id]["invites"] = data[ref_id].get("invites", 0) + 1
-    else:
-        if uid not in data:
-            data[uid] = {"ref": "", "wallet": "", "spins": 0, "invites": 0}
-    save_data(data)
-
-    text = (
-        "🧠 <b>به دنیای NeuroFi خوش آمدید!</b>\n\n"
-        "🌐 شبکه اجتماعی ما ترکیبی از:\n"
-        "💱 خدمات صرافی و حواله\n"
-        "🎯 سیگنال‌های هوش مصنوعی شخصی‌سازی‌شده\n"
-        "📰 اخبار اقتصادی + مقالات رمزارز\n"
-        "💬 گروه گفت‌وگو، ویس چت، همکاری با پروژه‌ها\n\n"
-        "🎁 جوایز در ۴ مرحله:\n"
-        "1️⃣ عضویت در کانال‌ها = گردونه ۱\n"
-        "2️⃣ اد ۱۰۰ نفر = گردونه ۲\n"
-        "3️⃣ اد ۱۵۰ نفر = گردونه ۳\n"
-        "4️⃣ اد ۲۰۰ نفر = گردونه ۴\n\n"
-        "👇 ابتدا در این کانال‌ها عضو شوید:"
-    )
-
     keyboard = [
-        [InlineKeyboardButton("📢 NeuroFi Channel", url="https://t.me/NeuroFi_Channel")],
-        [InlineKeyboardButton("📍 اطلاعیه و تحلیل", url="https://t.me/Neuro_Fi")],
-        [InlineKeyboardButton("📡 سیگنال‌ها", url="https://t.me/Neurofi_signals")],
-        [InlineKeyboardButton("🪙 پروژه‌های کریپتو", url="https://t.me/Neurofi_Crypto")],
-        [InlineKeyboardButton("✅ بررسی عضویت و قرعه‌کشی", callback_data="verify")],
+        [InlineKeyboardButton("🎯 ورود به مرحله اول", callback_data="phase1")]
     ]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+    await update.message.reply_text(
+        "🧠 به دنیای *NeuroFi* خوش آمدید!\n\n"
+        "📌 ما یک شبکه واقعی هستیم با:\n"
+        "• خدمات صرافی و انتقال رمزارز\n"
+        "• سیگنال هوش مصنوعی و شخصی‌سازی شده\n"
+        "• تحلیل، مقاله، اخبار، وایت‌پیپر\n"
+        "• ویس‌چت آموزشی، تحلیلی و مصاحبه با پروژه‌ها\n\n"
+        "✨ در دنیای ما... جاذبه همیشه به سمت بالاست 🚀\n\n"
+        "🎯 برای استفاده از گردونه، روی دکمه زیر بزنید\n"
+        "📌 و جوایز ارزشمند مثل NFT، ارز دیجیتال و خدمات دریافت کن!",
+        parse_mode='Markdown',
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
-# ---------------- بررسی عضویت و قرعه‌کشی ----------------
-async def verify_membership(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# بررسی مرحله 1
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    user = query.from_user
-    uid = str(user.id)
-    data = load_data()
+    await query.answer()
 
-    await query.answer("در حال بررسی عضویت...")
-
-    if not await is_member(user.id):
-        await query.edit_message_text("⛔️ در برخی از کانال‌ها هنوز عضو نیستید. لطفاً عضو شوید و دوباره امتحان کنید.")
-        return
-
-    # اگر مجاز به چرخش هست
-    spins = data[uid]["spins"]
-    invites = data[uid]["invites"]
-
-    spin_allowed = (
-        spins == 0 or
-        (spins == 1 and invites >= 100) or
-        (spins == 2 and invites >= 150) or
-        (spins == 3 and invites >= 200)
-    )
-
-    if not spin_allowed:
-        await query.edit_message_text("❗️شرایط لازم برای قرعه‌کشی بعدی را هنوز کامل نکردید.")
-        return
-
-    # چرخش گردونه
-    await query.edit_message_text("🎰 در حال چرخاندن گردونه ... لطفاً منتظر بمانید.")
-    await context.bot.send_sticker(chat_id=user.id, sticker="CAACAgUAAxkBAAIBm2W_YgY8S4AAAS2XxYv_xJcEcHo7Yr0AAikAA9C-MFUgVgaMJjYEVjQE")
-    await asyncio.sleep(3)
-
-    prize = random.choice(REWARD_POOL)
-    data[uid]["spins"] += 1
-    data[uid]["last_reward"] = prize
-    save_data(data)
-
-    msg = (
-        f"🎉 تبریک! شما برنده شدید:\n<b>{prize}</b>\n\n"
-        "📥 لطفاً آدرس کیف پول خود را با فرمت زیر ارسال کنید:\n\n"
-        "`wallet: YOUR_WALLET_ADDRESS`\n\n"
-        "🎯 پس از ارسال، جایزه برای شما رزرو خواهد شد.\n"
-        f"📩 ارتباط با ادمین: @NeuroFi_Persian"
-    )
-    await context.bot.send_message(chat_id=user.id, text=msg, parse_mode="HTML")
-
-# ---------------- آدرس کیف پول ----------------
-async def handle_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    uid = str(user.id)
-    text = update.message.text.strip()
-    data = load_data()
-
-    if text.lower().startswith("wallet:"):
-        address = text.split("wallet:")[1].strip()
-        data[uid]["wallet"] = address
-        save_data(data)
-
-        # ارسال به ادمین
-        reward = data[uid].get("last_reward", "ندارد")
-        admin_text = (
-            f"🎁 کاربر جدید جایزه گرفت:\n"
-            f"👤 یوزرنیم: @{user.username}\n"
-            f"🆔 آیدی: {uid}\n"
-            f"🎉 جایزه: {reward}\n"
-            f"💼 کیف پول: {address}"
+    if query.data == "phase1":
+        keyboard = [
+            [InlineKeyboardButton("📢 کانال اصلی", url="https://t.me/NeuroFi_Channel")],
+            [InlineKeyboardButton("📡 سیگنال‌ها", url="https://t.me/Neurofi_signals")],
+            [InlineKeyboardButton("🧪 گروه تحلیل", url="https://t.me/Neuro_Fi")],
+            [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]
+        ]
+        await query.edit_message_text(
+            "✅ لطفاً در کانال‌های زیر عضو شوید و سپس دکمه بررسی را بزنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text)
-        await update.message.reply_text("✅ آدرس شما ثبت شد و به ادمین ارسال شد.")
-    else:
-        await update.message.reply_text("❗️لطفاً با فرمت زیر ارسال کنید:\nwallet: YOUR_WALLET_ADDRESS")
 
-# ---------------- اجرای ربات ----------------
+    elif query.data == "check_membership":
+        await query.edit_message_text("🎰 در حال چرخاندن گردونه ... لطفا صبر کنید ...")
+        await context.bot.send_sticker(chat_id=query.message.chat_id, sticker=WHEEL_STICKER)
+
+        prize = random.choice(PRIZES)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"🎉 تبریک! شما برنده شدید:\n{prize}\n\n"
+                 "💼 لطفاً آدرس کیف پول USDT (TRC20) خود را ارسال کنید.",
+        )
+
+        # اطلاع به ادمین
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🎁 کاربر @{query.from_user.username or query.from_user.id} برنده شد:\n{prize}"
+        )
+
+        # دکمه‌های مرحله بعد
+        keyboard = [
+            [InlineKeyboardButton("📨 دریافت لینک دعوت", callback_data="ref_link")],
+            [InlineKeyboardButton("🎯 مرحله دوم (اد 100 نفر)", callback_data="phase2")]
+        ]
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="📢 با دعوت از دوستان، جوایز بیشتری بگیر!\nهرچه بیشتر دعوت کنید، هدیه بزرگ‌تری دریافت می‌کنید 🎁",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif query.data == "ref_link":
+        invite_link = "https://t.me/Neuro_Fi?start={}".format(update.effective_user.id)
+        await query.edit_message_text(
+            f"🔗 لینک دعوت اختصاصی شما:\n{invite_link}\n\n"
+            "📣 با دعوت دوستان، هدیه بگیر!",
+        )
+
+    elif query.data == "phase2":
+        await query.edit_message_text(
+            "✅ لطفاً 100 نفر به گروه اصلی @Neuro_Fi اضافه کن\n"
+            "سپس دکمه زیر را بزن تا گردونه فعال شود.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎰 چرخاندن گردونه جایزه دوم", callback_data="check_100")]
+            ])
+        )
+
+    elif query.data == "check_100":
+        await context.bot.send_message(chat_id=query.message.chat_id, text="🎰 گردونه دوم در حال چرخش ...")
+        await context.bot.send_sticker(chat_id=query.message.chat_id, sticker=WHEEL_STICKER)
+
+        prize = random.choice(PRIZES)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"🎊 برنده مرحله دوم شدی:\n{prize}\n\n"
+                 "💼 آدرس کیف پولت رو بفرست تا جایزه رو بگیری.",
+        )
+
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=f"🏆 برنده مرحله دوم: @{query.from_user.username or query.from_user.id}\n{prize}"
+        )
+
+# اجرای بات
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(verify_membership, pattern="^verify$"))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_wallet))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.run_polling()
